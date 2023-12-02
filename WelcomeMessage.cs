@@ -1,28 +1,30 @@
 ﻿using CounterStrikeSharp.API;
 using CounterStrikeSharp.API.Core;
 using CounterStrikeSharp.API.Core.Attributes.Registration;
-using CounterStrikeSharp.API.Modules.Admin;
 using CounterStrikeSharp.API.Modules.Commands;
-using System.IO;
+using CounterStrikeSharp.API.Modules.Cvars;
+using CounterStrikeSharp.API.Modules.Utils;
+using System.Reflection;
 namespace WelcomeMessage;
 
 public class WelcomeMessage : BasePlugin{
 	private string? _message;
-	public Dictionary<CCSPlayerController, bool> MessageShown = new Dictionary<CCSPlayerController, bool>();
 	public override string ModuleName => "tWelcomeMessage";
 	public override string ModuleAuthor => "Tomgra";
-	public override string ModuleVersion => "0.0.1";
+	public override string ModuleVersion => "1.1.3";
 
 	public override void Load(bool hotReload) {
 		_message = ManageFile(ModuleDirectory + "/message.txt");
 		RegisterEventHandler<EventPlayerConnectFull>(OnPlayerConnectFull);
-		RegisterEventHandler<EventPlayerTeam>(OnPlayerTeam);
 	}
 
 	private static string ManageFile(string filepath) {
-		string s = "{GREY}Witamy na serwerze {RED}TestServer{GREY}, {GOLD}{NAME}{GREY}. Koniecznie zapisz nasze IP: {RED}1.1.1.1{GREY}.\n" +
-					"Aktualnie na serwerze jest {PLAYERS}/{MAXPLAYERS} graczy.\n{GREY}Życzymy dobrej zabawy!\n" +
-					"Aktualnie jest godzina {TIME}. Gramy mapę {MAP}";
+		string s = "{SERVERNAME} - nazwa serwera, {NAME} - nazwa gracza, {PLAYERS} - liczba graczy na serwerze, {MAXPLAYERS} - liczba slotów" +
+					"{TIME} - godzina (HH:mm), {DATE} - data (dd.MM.yyyy), {IP} - ip serwera, {PORT} - port serwera, {MAP} - nazwa aktualnie granej mapy\n" +
+					"message:Witamy na serwerze {RED}{SERVERNAME}{Default}, {Gold}{NAME}{Default}. Koniecznie zapisz nasze IP: {Red}{IP}:{PORT}{Default}.\n" +
+					"Aktualnie na serwerze jest {Green}{PLAYERS}/{MAXPLAYERS}{Default} graczy.\n" +
+					"Życzymy dobrej zabawy!\n" +
+					"{Red}Aktualnie jest {Green}{TIME} {DATE}{Default}. Gramy mapę {Green}{MAP}";
 		if (!File.Exists(filepath)){
 			File.WriteAllText(filepath, s);
 			return s;
@@ -36,38 +38,38 @@ public class WelcomeMessage : BasePlugin{
 	[ConsoleCommand("css_twm_reload")]
 	[CommandHelper(minArgs: 0, usage: "", whoCanExecute: CommandUsage.SERVER_ONLY)]
 	public void OnReloadConfig(CCSPlayerController? player, CommandInfo commandInfo) {
-		_message = ManageFile(ModuleDirectory + "/tags.json");
+		_message = ManageFile(ModuleDirectory + "/message.txt");
 		Server.PrintToConsole("[tWelcomeMessage] Config reloaded!");
 	}
 
 	private HookResult OnPlayerConnectFull(EventPlayerConnectFull @event, GameEventInfo eventInfo) {
 		var player = @event.Userid;
-		if(player != null && player.IsValid && !player.IsBot) MessageShown.Add(player, false);
+		if (_message != null && player != null && player.IsValid && !player.IsBot) {
+			string message = _message
+			.Replace("{NAME}", player.PlayerName)
+			.Replace("{PLAYERS}", Utilities.GetPlayers().Count().ToString())
+			.Replace("{MAXPLAYERS}", Server.MaxPlayers.ToString())
+			.Replace("{MAP}", Server.MapName)
+			.Replace("{TIME}", DateTime.Now.ToString("HH:mm"))
+			.Replace("{DATE}", DateTime.Now.ToString("dd.MM.yyyy"))
+			.Replace("{IP}", ConVar.Find("ip")!.StringValue)
+			.Replace("{PORT}", ConVar.Find("hostport")!.GetPrimitiveValue<int>().ToString())
+			.Replace("{SERVERNAME}", ConVar.Find("hostname")!.StringValue);
+			string[] s = message.Substring(message.IndexOf("message:") + 8).Split('\n');
+			for (int i = 0; i < s.Length; i++) player.PrintToChat(ReplaceColors(s[i]));
+		}
 		return HookResult.Continue;
 	}
-	private HookResult OnPlayerTeam(EventPlayerTeam @event, GameEventInfo eventInfo) {
-		var player = @event.Userid;
-        if (_message != null && player != null && player.IsValid && !player.IsBot && !MessageShown[player]) {
-			MessageShown[player] = true;
-			_message.Replace("{NAME}", player.PlayerName);
-			_message.Replace("{PLAYERS}", System.Convert.ToString(PlayerCount()));
-			_message.Replace("{MAXPLAYERS}", System.Convert.ToString(Server.MaxPlayers));
-			_message.Replace("{MAP}", Server.MapName);
-			_message.Replace("{TIME}", System.Convert.ToString(Server.CurrentTime));
-			string[] s = _message.Split('\n');
-			for(int i=0; i<s.Length; i++) {
 
+	private string ReplaceColors(string message) {
+		if (message.Contains('{')) {
+			string modifiedValue = message;
+			foreach (FieldInfo field in typeof(ChatColors).GetFields()) {
+				string pattern = '{' + field.Name + '}';
+				modifiedValue = modifiedValue.Replace(pattern, field.GetValue(null)!.ToString(), StringComparison.OrdinalIgnoreCase);
 			}
+			return modifiedValue;
 		}
-		return HookResult.Continue;
-    }
-
-	public int PlayerCount() {
-		int count = 0;
-		for(int i = 0; i < Server.MaxPlayers; i++) {
-			CCSPlayerController? player = Utilities.GetPlayerFromIndex(i);
-			if(player != null && player.IsValid && !player.IsBot) count++;
-		}
-		return count;
+		return message;
 	}
 }
