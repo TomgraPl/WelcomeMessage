@@ -5,58 +5,67 @@ using CounterStrikeSharp.API.Modules.Commands;
 using CounterStrikeSharp.API.Modules.Cvars;
 using CounterStrikeSharp.API.Modules.Utils;
 using System.Reflection;
+using Newtonsoft.Json.Linq;
 namespace WelcomeMessage;
 
 public class WelcomeMessage : BasePlugin{
-	private string? _message;
+	public static JObject? JsonMessage { get; private set; }
 	public override string ModuleName => "tWelcomeMessage";
 	public override string ModuleAuthor => "Tomgra";
-	public override string ModuleVersion => "1.1.3";
+	public override string ModuleVersion => "1.1.6";
 
 	public override void Load(bool hotReload) {
-		_message = ManageFile(ModuleDirectory + "/message.txt");
+		CreateOrLoadJsonFile(ModuleDirectory + "/message.json");
 		RegisterEventHandler<EventPlayerConnectFull>(OnPlayerConnectFull);
 	}
-
-	private static string ManageFile(string filepath) {
-		string s = "{SERVERNAME} - nazwa serwera, {NAME} - nazwa gracza, {PLAYERS} - liczba graczy na serwerze, {MAXPLAYERS} - liczba slotów" +
-					"{TIME} - godzina (HH:mm), {DATE} - data (dd.MM.yyyy), {IP} - ip serwera, {PORT} - port serwera, {MAP} - nazwa aktualnie granej mapy\n" +
-					"message:Witamy na serwerze {RED}{SERVERNAME}{Default}, {Gold}{NAME}{Default}. Koniecznie zapisz nasze IP: {Red}{IP}:{PORT}{Default}.\n" +
-					"Aktualnie na serwerze jest {Green}{PLAYERS}/{MAXPLAYERS}{Default} graczy.\n" +
-					"Życzymy dobrej zabawy!\n" +
-					"{Red}Aktualnie jest {Green}{TIME} {DATE}{Default}. Gramy mapę {Green}{MAP}";
-		if (!File.Exists(filepath)){
-			File.WriteAllText(filepath, s);
-			return s;
+	private static void CreateOrLoadJsonFile(string filepath) {
+		if (!File.Exists(filepath)) {
+			var templateData = new JObject
+			{
+				["WelcomeMessage"] = new JObject
+				{
+					["message"] = "Witamy na serwerze {RED}{SERVERNAME}{Default}, {Gold}{NAME}{Default}." +
+					"\nKoniecznie zapisz nasze IP: {Red}{IP}:{PORT}{Default}." +
+					"\nAktualnie na serwerze jest {Green}{PLAYERS}/{MAXPLAYERS}{Default} graczy." +
+					"\nŻyczymy dobrej zabawy!" +
+					"\n{Red}Aktualnie jest {Green}{TIME} {DATE}{Default}. Gramy mapę {Green}{MAP}",
+				},
+			};
+			File.WriteAllText(filepath, templateData.ToString());
+			var jsonData = File.ReadAllText(filepath);
+			JsonMessage = JObject.Parse(jsonData);
 		} else {
-			string message = File.ReadAllText(filepath);
-			if (message.Length <= 1) return s;
-			else return message;
+			var jsonData = File.ReadAllText(filepath);
+			JsonMessage = JObject.Parse(jsonData);
 		}
 	}
 
 	[ConsoleCommand("css_twm_reload")]
 	[CommandHelper(minArgs: 0, usage: "", whoCanExecute: CommandUsage.SERVER_ONLY)]
-	public void OnReloadConfig(CCSPlayerController? player, CommandInfo commandInfo) {
-		_message = ManageFile(ModuleDirectory + "/message.txt");
+	public void OnReloadConfig(CCSPlayerController? player, CommandInfo info) {
+		CreateOrLoadJsonFile(ModuleDirectory + "/message.json");
 		Server.PrintToConsole("[tWelcomeMessage] Config reloaded!");
 	}
 
 	private HookResult OnPlayerConnectFull(EventPlayerConnectFull @event, GameEventInfo eventInfo) {
 		var player = @event.Userid;
-		if (_message != null && player != null && player.IsValid && !player.IsBot) {
-			string message = _message
-			.Replace("{NAME}", player.PlayerName)
-			.Replace("{PLAYERS}", Utilities.GetPlayers().Count().ToString())
-			.Replace("{MAXPLAYERS}", Server.MaxPlayers.ToString())
-			.Replace("{MAP}", Server.MapName)
-			.Replace("{TIME}", DateTime.Now.ToString("HH:mm"))
-			.Replace("{DATE}", DateTime.Now.ToString("dd.MM.yyyy"))
-			.Replace("{IP}", ConVar.Find("ip")!.StringValue)
-			.Replace("{PORT}", ConVar.Find("hostport")!.GetPrimitiveValue<int>().ToString())
-			.Replace("{SERVERNAME}", ConVar.Find("hostname")!.StringValue);
-			string[] s = message.Substring(message.IndexOf("message:") + 8).Split('\n');
-			for (int i = 0; i < s.Length; i++) player.PrintToChat(ReplaceColors(s[i]));
+		if (JsonMessage != null && player != null && player.IsValid && !player.IsBot && JsonMessage.TryGetValue("WelcomeMessage", out var wMessage) && wMessage is JObject messageObject) {
+			string message = messageObject["message"]?.ToString() ?? string.Empty;
+			if(message != string.Empty) {
+				string newMessage = message
+				.Replace("{NAME}", player.PlayerName)
+				.Replace("{PLAYERS}", Utilities.GetPlayers().Count().ToString())
+				.Replace("{MAXPLAYERS}", Server.MaxPlayers.ToString())
+				.Replace("{MAP}", Server.MapName)
+				.Replace("{TIME}", DateTime.Now.ToString("HH:mm"))
+				.Replace("{DATE}", DateTime.Now.ToString("dd.MM.yyyy"))
+				.Replace("{IP}", ConVar.Find("ip")!.StringValue)
+				.Replace("{PORT}", ConVar.Find("hostport")!.GetPrimitiveValue<int>().ToString())
+				.Replace("{SERVERNAME}", ConVar.Find("hostname")!.StringValue);
+				newMessage = ReplaceColors(newMessage);
+				string[] s = newMessage.Split('\n');
+				for (int i = 0; i < s.Length; i++) player.PrintToChat(ReplaceColors(s[i]));
+			}		
 		}
 		return HookResult.Continue;
 	}
