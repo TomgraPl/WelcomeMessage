@@ -12,7 +12,7 @@ public class WelcomeMessage : BasePlugin{
 	public static JObject? JsonMessage { get; private set; }
 	public override string ModuleName => "tWelcomeMessage";
 	public override string ModuleAuthor => "Tomgra";
-	public override string ModuleVersion => "1.1.6";
+	public override string ModuleVersion => "1.2.0";
 
 	public override void Load(bool hotReload) {
 		CreateOrLoadJsonFile(ModuleDirectory + "/message.json");
@@ -52,7 +52,7 @@ public class WelcomeMessage : BasePlugin{
 		if (JsonMessage != null && player != null && player.IsValid && !player.IsBot && JsonMessage.TryGetValue("WelcomeMessage", out var wMessage) && wMessage is JObject messageObject) {
 			string message = messageObject["message"]?.ToString() ?? string.Empty;
 			if(message != string.Empty) {
-				string newMessage = message
+				message = message
 				.Replace("{NAME}", player.PlayerName)
 				.Replace("{PLAYERS}", Utilities.GetPlayers().Count().ToString())
 				.Replace("{MAXPLAYERS}", Server.MaxPlayers.ToString())
@@ -61,10 +61,13 @@ public class WelcomeMessage : BasePlugin{
 				.Replace("{DATE}", DateTime.Now.ToString("dd.MM.yyyy"))
 				.Replace("{IP}", ConVar.Find("ip")!.StringValue)
 				.Replace("{PORT}", ConVar.Find("hostport")!.GetPrimitiveValue<int>().ToString())
-				.Replace("{SERVERNAME}", ConVar.Find("hostname")!.StringValue);
-				newMessage = ReplaceColors(newMessage);
-				string[] s = newMessage.Split('\n');
-				for (int i = 0; i < s.Length; i++) player.PrintToChat(ReplaceColors(s[i]));
+				.Replace("{SERVERNAME}", ConVar.Find("hostname")!.StringValue)
+				//Z jakiegoś powodu, jeśli wiadomość zaczyna się od koloru, to jest on ignorowanyw
+				.Replace("\n", "\n ");
+				message = $" {message}";
+				message = ReplaceColors(message);
+				string[] s = message.Split("\n");
+				for (int i = 0; i < s.Length; i++) player.PrintToChat(s[i]);
 			}		
 		}
 		return HookResult.Continue;
